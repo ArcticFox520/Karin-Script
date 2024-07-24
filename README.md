@@ -44,6 +44,6 @@
 ---
 ## 致谢
 | Nickname | Github | Contribution |
-| :--------: | :--------: | :--------: | :--------: |
+| :--------: | :--------: | :--------: |
 | Karin | [☞GitHub](https://github.com/KarinJS/Karin) | Karin本体仓库 |
 | Karin-Puppeteer | [☞GitHub](https://github.com/KarinJS/karin-puppeteer) | Karin的渲染器仓库 |
