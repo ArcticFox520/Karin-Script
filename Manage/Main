@@ -1,0 +1,759 @@
+#!/bin/env bash
+# 设置颜色变量
+black="\e[30m"
+red="\033[31m"
+green="\033[32m"
+yellow="\033[33m"
+blue="\033[34m"
+purple="\033[35m"
+cyan="\033[36m"
+white="\033[37m"
+background="\033[0m"
+
+function MenuSize(){
+HEIGHT=$(($(tput lines) - 10))
+WIDTH=$(($(tput cols) - 10))
+OPTION=$((${HEIGHT} - 8))
+if (( $HEIGHT <= 8 ));then
+  echo -e ${blue}[${red}*${blue}] ${cyan}您的屏幕高度过低.${background}
+  exit
+fi
+if (( $WIDTH <= 0 ));then
+  echo -e ${blue}[${red}*${blue}] ${cyan}您的屏幕宽度度过窄.${background}
+  exit
+fi
+}
+
+function MsgboxSize(){
+HEIGHT=$(($(tput lines) - 30))
+WIDTH=$(($(tput cols) - 10))
+if (( $HEIGHT <= 0 ));then
+  echo -e ${blue}[${red}*${blue}] ${cyan}您的屏幕高度过低.${background}
+  exit
+fi
+if (( $WIDTH <= 0 ));then
+  echo -e ${blue}[${red}*${blue}] ${cyan}您的屏幕宽度度过窄.${background}
+  exit
+fi
+}
+
+BotRun(){
+case $1 in
+tmux)
+  case $2 in
+    start)
+      if tmux new -s $3 -d "$4" > /dev/null 2>&1
+      then
+        return 0
+      else
+        return 1
+      fi
+    ;;
+    stop)
+      if tmux kill-session -t $3 > /dev/null 2>&1
+      then
+        return 0
+      else
+        return 1
+      fi
+    ;;
+    restart)
+      if tmux kill-session -t $3 && tmux new -s $3 -d "$4" > /dev/null 2>&1
+      then
+        return 0
+      else
+        return 1
+      fi
+    ;;
+    log)
+      if tmux attach -t $3 > /dev/null 2>&1 
+      then
+        return 0
+      else
+        return 1
+      fi
+    ;;
+    list)
+      if tmux ls | grep -q $3
+      then
+        return 0
+      else
+        return 1
+      fi
+    ;;
+  esac
+;;
+screen)
+  case $2 in
+    start)
+      if screen -S $3 -d -m bash -c "$4"
+      then
+        return 0
+      else
+        return 1
+      fi
+      ;;
+    stop)
+      Session=$(screen -ls | grep $3 | awk '{print $1}')
+      if screen -X -S ${Session} quit
+      then
+        return 0
+      else
+        return 1
+      fi
+      ;;
+    restart)
+      Session=$(screen -ls | grep $3 | awk '{print $1}')
+      if screen -X -S ${Session} quit && screen -S ${Session} -d -m bash -c "$4"
+      then
+        return 0
+      else
+        return 1
+      fi
+      ;;
+    log)
+      Session=$(screen -ls | grep $3 | awk '{print $1}')
+      if screen -r ${Session}
+      then
+        return 0
+      else
+        return 1
+      fi
+      ;;
+    list)
+      if screen -ls | grep -q $3
+      then
+        return 0
+      esle
+        return 1
+      fi
+      ;;
+  esac
+;;
+pm2)
+  case $2 in
+    start)
+      if pm2 start --name $3 "$4"
+      then
+        return 0
+      else
+        return 1
+      fi
+    ;;
+    stop)
+      if pm2 stop $3
+      then
+        return 0
+      else
+        return 1
+      fi
+    ;;
+    restart)
+      if pm2 stop $3 && pm2 start --name $3 "$4"
+      then
+        return 0
+      else
+        return 1
+      fi
+    ;;
+    log)
+      if pm2 logs $3 | sed '/PM2/d'
+      then
+        return 0
+      else
+        return 1
+      fi
+    ;;
+    list)
+      if pm2 list
+      then
+        return 0
+      else
+        return 1
+      fi
+    ;;
+  esac
+;;
+esac
+}
+
+function Download(){
+file="$1"
+URL="$2"
+i=0
+if wget --help | grep -q show-progress 
+then
+  echo -e ${blue}[${green}*${blue}] ${cyan}正在下载 ${yellow}${file}${cyan}${background}
+  until wget -q --show-progress -O ${file} -c ${URL}
+  do
+    if [ ${i} == 3 ]
+    then
+      echo -e ${blue}[${red}*${blue}] ${cyan}错误次数过多 ${yellow}退出${background}
+      exit 3
+    fi
+    let i++
+    echo -e ${blue}[${red}*${blue}] ${cyan}下载失败 ${yellow}三秒后重试${background}
+    sleep 3s
+  done
+  echo -e ${blue}[${green}*${blue}] ${cyan}下载完成.${background}
+else
+  echo -e ${blue}[${green}*${blue}] ${cyan}正在下载 ${yellow}${file}${cyan}${background}
+  if curl --help | grep progress-bar
+  then
+    curl --progress-bar -C - -o ${file} ${URL}
+  else
+    curl -C - -o ${file} ${URL}
+  fi
+  echo -e ${blue}[${green}*${blue}] ${cyan}下载完成.${background}
+fi
+}
+
+RedisServerStart(){
+PedisCliPing(){
+if [ "$(redis-cli ping 2>&1)" == "PONG" ]
+then
+  return 0
+else
+  return 1
+fi
+}
+if $(PedisCliPing)
+then
+  echo -e ${cyan}Redis-Server${green} 已启动${background}
+else
+  $(nohup redis-server > /dev/null 2>&1 &)
+  echo -e ${cyan}等待Redis-Server启动中${background}
+  until PedisCliPing
+  do
+    sleep 0.2s
+  done
+  echo -e ${cyan}Redis-Server${green} 启动成功${background}
+fi
+}
+BackToFore(){
+if pnpm pm2 list | grep ${BotName} | grep -q online
+then
+  pnpm pm2 stop ${BotName}
+  afyz start ${BotName}
+fi
+}
+CheckStart(){
+if tmux ls 2>&1 | grep -q $1
+then
+  StartSoftware=tmux
+  return 1
+elif screen -ls 2>&1 | grep -q $1
+then
+  StartSoftware=screen
+  return 2
+elif pm2 list 2>&1 | grep -q $1
+then
+  StartSoftware=pm2
+  return 3
+elif ps -ef 2>&1 | sed '/grep/d' | grep -q $1
+then
+  if ! $(ps -ef 2>&1 | sed '/grep/d' | grep -q $1 | grep -q whiptail || grep -q dialog)
+  then
+    return 0
+  else
+    return 4
+  fi
+else
+  StartSoftware=tmux
+  return 0
+fi
+}
+CheckStartSoftware(){
+CheckStart
+case $? in
+1)
+  MsgboxSize
+  whiptail --title "AF-YZ" \
+  --msgbox "${BotName} 已在 [Tmux] 中启动" \
+  ${HEIGHT} ${WIDTH}
+;;
+2)
+  MsgboxSize
+  whiptail --title "AF-YZ" \
+  --msgbox "${BotName} 已在 [Screen] 中启动" \
+  ${HEIGHT} ${WIDTH}
+;;
+3)
+  MsgboxSize
+  whiptail --title "AF-YZ" \
+  --msgbox "${BotName} 已在 [Pm2] 中启动" \
+  ${HEIGHT} ${WIDTH}
+;;
+4)
+  MsgboxSize
+  whiptail --title "AF-YZ" \
+  --msgbox "${BotName} 已在 [前台] 中启动" \
+  ${HEIGHT} ${WIDTH}
+  BotManage
+  exit
+;;
+esac
+}
+CheckPath(){
+BotName="$1"
+if [ -d "/root/${BotName}/node_modules" ];then
+    cd "/root/${BotName}"
+    return 0
+elif [ -d "/root/.fox@bot/${BotName}/node_modules" ];then
+    cd "/root/.fox@bot/${BotName}"
+    return 0
+elif [ -d "/home/lighthouse/ubuntu/${BotName}/node_modules" ];then
+    cd "/home/lighthouse/ubuntu/${BotName}"
+    return 0
+elif [ -d "/home/lighthouse/centos/${BotName}/node_modules" ];then
+    cd "/home/lighthouse/centos/${BotName}"
+    return 0
+elif [ -d "/home/lighthouse/debian/${BotName}/node_modules" ];then
+    cd "/home/lighthouse/debian/${BotName}"
+    return 0
+elif [ -d "/root/TRSS_AllBot/${BotName}/node_modules" ];then
+    cd "/root/TRSS_AllBot/${BotName}"
+    return 0
+elif [ -d "${BotPath}" ];then
+    return 0
+else
+    return 1
+fi
+}
+
+if echo $1 | grep -q '/'
+then
+  Path="$1/package.json"
+  if grep -q "miao-yunzai" ${Path}
+  then
+    BotName="Miao-Yunzai"
+    cd ${BotPath}/${BotName}
+  elif grep -q "trss-yunzai" ${Path}
+  then
+    BotName="Miao-Yunzai"
+    cd ${BotPath}/${BotName}
+  else
+    echo -e ${cyan}自定义路径: ${BotPath} ${red}判断失败${background}
+  fi
+else
+  case $1 in
+  MZ|Miao-Yunzai)
+    BotName="Miao-Yunzai"
+    CheckPath ${BotName}
+    CheckStart ${BotName}
+    ;;
+  TZ|TRSS-Yunzai|Yunzai)
+    BotName="TRSS-Yunzai"
+    CheckPath ${BotName}
+    CheckStart ${BotName}
+    ;;
+  esac
+fi
+
+case $2 in
+start)
+  RedisServerStart
+  node app
+  BackToFore
+  exit
+;;
+stop)
+  BotRun ${StartSoftware} stop ${BotName}
+  exit
+;;
+restart)
+  BotRun ${StartSoftware} restart ${BotName}
+  exit
+;;
+log)
+  BotRun ${StartSoftware} log ${BotName}
+  exit
+;;
+SignApi)
+  case $1 in
+    MZ|Miao-Yunzai)
+      ConfigFile="config/config/bot.yaml"
+      NewSignApiAddr="$3"
+      OldSignApiAddr=$(grep sign_api_addr ${ConfigFile})
+      NewSignApiAddr=$(echo ${NewSignApiAddr} | sed "s|sign_api_addr: ||g")
+      sed -i "s|${OldSignApiAddr}|sign_api_addr: ${NewSignApiAddr}|g" ${ConfigFile}
+      API=$(grep sign_api_addr ${ConfigFile} | sed "s|sign_api_addr: ||g")
+      echo -e ${cyan}SignApiAddr已修改为: ${green}${API}${background}
+      if [ ! -z $4 ]
+      then
+        if [[ $4 =~ [0-9] ]]
+        then
+          NewQQVersion="$4"
+          OldQQVersion=$(grep ver ${ConfigFile})
+          NewSignApiAddr=$(echo ${NewSignApiAddr} | sed "s|ver: ||g")
+          sed -i "s|${OldQQVersion}|ver: ${NewQQVersion}|g" ${ConfigFile}
+          echo -e ${cyan}QQVersion已修改为: ${green}${NewQQVersion}${background}
+        fi
+      fi
+    ;;
+    TZ|TRSS-Yunzai|Yunzai)
+      ConfigFile="config/ICQQ.yaml"
+      NewSignApiAddr="$3"
+      OldSignApiAddr=$(grep sign_api_addr ${ConfigFile})
+      NewSignApiAddr=$(echo ${NewSignApiAddr} | sed "s|sign_api_addr: ||g")
+      sed -i "s|${OldSignApiAddr}|  sign_api_addr: ${NewSignApiAddr}|g" ${ConfigFile}
+      API=$(grep sign_api_addr ${ConfigFile} | sed "s|sign_api_addr: ||g")
+      echo -e ${cyan}SignApiAddr已修改为: ${green}${API}${background}
+    ;;
+  esac
+  exit
+;;
+Master)
+  ConfigFile="config/config/bot.yaml"
+  sed -i "/master/a\  - $3" ${ConfigFile}
+  echo -e ${cyan}主人账号已修改为: ${green}$3${background}
+  exit
+;;
+esac
+
+BotManage(){
+OtherFunctions(){
+MenuSize
+Number=$(whiptail \
+--title "AF-YZ" \
+--menu "${BotName}管理" \
+${HEIGHT} ${WIDTH} ${OPTION} \
+"1" "填写ICQQ签名" \
+"2" "修改主人账号" \
+"3" "重装依赖文件" \
+"4" "自动退群人数" \
+"5" "好友申请同意" \
+"0" "返回上级菜单" \
+3>&1 1>&2 2>&3)
+case ${Number} in
+1)
+  case ${BotName} in
+    Miao-Yunai)
+      ConfigFile="config/config/bot.yaml"
+      MsgboxSize
+      if NewSignApiAddr=$(whiptail --title "AF-YZ"  \
+      --yes-button "确认" \
+      --no-button "返回" \
+      --inputbox "请输入您的签名服务器链接" \
+      ${HEIGHT} ${WIDTH} \
+      3>&1 1>&2 2>&3)
+      then
+        OldSignApiAddr=$(grep sign_api_addr ${ConfigFile})
+        OldSignApiAddr=$(grep sign_api_addr ${ConfigFile})
+        NewSignApiAddr=$(echo ${NewSignApiAddr} | sed "s|sign_api_addr: ||g")
+        sed -i "s|${OldSignApiAddr}|sign_api_addr: ${NewSignApiAddr}|g" ${ConfigFile}
+        API=$(grep sign_api_addr ${ConfigFile} | sed "s|sign_api_addr: ||g")
+        echo -en ${cyan}SignApiAddr已修改为: ${green}${API}${background};read
+      else
+        OtherFunctions
+        BotManage
+      fi
+    ;;
+    TRSS-Yunzai)
+      ConfigFile="config/ICQQ.yaml"
+      MsgboxSize
+      if NewSignApiAddr=$(whiptail --title "AF-YZ"  \
+      --yes-button "确认" \
+      --no-button "返回" \
+      --inputbox "请输入您的签名服务器链接" \
+      ${HEIGHT} ${WIDTH} \
+      3>&1 1>&2 2>&3)
+      then
+        OldSignApiAddr=$(grep sign_api_addr ${ConfigFile})
+        NewSignApiAddr=$(echo ${NewSignApiAddr} | sed "s|sign_api_addr: ||g")
+        sed -i "s|${OldSignApiAddr}|  sign_api_addr: ${NewSignApiAddr}|g" ${ConfigFile}
+        API=$(grep sign_api_addr ${ConfigFile} | sed "s|sign_api_addr: ||g")
+        echo -en ${cyan}SignApiAddr已修改为: ${green}${API}${background};read
+      else
+        OtherFunctions
+        BotManage
+      fi
+    ;;
+  esac
+;;
+2)
+  ConfigFile="config/config/bot.yaml"
+  MsgboxSize
+  if Master=$(whiptail --title "AF-YZ"  \
+  --yes-button "确认" \
+  --no-button "返回" \
+  --inputbox "请输入您的主人账号" \
+  ${HEIGHT} ${WIDTH} \
+  3>&1 1>&2 2>&3)
+  then
+    sed -i "/master/a\  - ${Master}" ${ConfigFile}
+    echo -en ${cyan}修改完成 ${green}回车返回${background};read
+  else
+    OtherFunctions
+    BotManage
+  fi
+  ;;
+3)
+  for PluginFolder in $(ls plugins)
+  do
+    if [ -d plugins/${PluginFolder}/node_modules ]
+    then
+      Name=$(grep name plugins/${PluginFolder}/package.json | grep name | awk '{print $2}' | sed 's|,||g')
+      echo -e ${yellow}正在删除 ${cyan}${Name}${yellow} 的依赖文件${background}
+      rm -rvf plugins/${PluginFolder}/node_modules
+    fi
+  done
+  echo -e ${yellow}正在安装依赖${background}
+  echo Y | pnpm install
+  echo -en ${cyan}依赖重装完成 ${green}回车返回${background};read
+  ;;
+4)
+  ConfigFile="config/config/bot.yaml"
+  MsgboxSize
+  if NewAutoQuit=$(whiptail --title "AF-YZ"  \
+  --yes-button "确认" \
+  --no-button "返回" \
+  --inputbox "请输入自动退群人数" \
+  ${HEIGHT} ${WIDTH} \
+  3>&1 1>&2 2>&3)
+  then
+    OldAutoQuit=$(grep autoQuit ${ConfigFile})
+    sed -i "s|${OldAutoQuit}|autoQuit: ${NewAutoQuit}|g" ${ConfigFile}
+    echo -en ${cyan}修改完成 ${green}回车返回${background};read
+  else
+    OtherFunctions
+    BotManage
+  fi
+  ;;
+5)
+  if (whiptail --title "AF-YZ"  \
+  --yes-button "开启" \
+  --no-button "关闭" \
+  --yesno "设置好友申请自动同意" ${HEIGHT} ${WIDTH})
+  then
+    OldAutoFriend=$(grep autoFriend ${ConfigFile})
+    sed -i "s|${OldAutoQuit}|autoQuit: 1|g" ${ConfigFile}
+    echo -en ${cyan}修改完成 ${green}回车返回${background};read
+  else
+    OldAutoFriend=$(grep autoFriend ${ConfigFile})
+    sed -i "s|${OldAutoQuit}|autoQuit: 0|g" ${ConfigFile}
+    echo -en ${cyan}修改完成 ${green}回车返回${background};read
+  fi
+  ;;
+esac
+}
+BotName="$1"
+MenuSize
+Number=$(whiptail \
+--title "AF-YZ" \
+--menu "${BotName}管理" \
+${HEIGHT} ${WIDTH} ${OPTION} \
+"1" "启动运行" \
+"2" "前台启动" \
+"3" "停止运行" \
+"4" "重新启动" \
+"5" "打开日志" \
+"6" "插件管理" \
+"7" "全部更新" \
+"8" "其他功能" \
+"0" "  返回  " \
+3>&1 1>&2 2>&3)
+case ${Number} in
+1)
+  if CheckStart ${BotName}
+  then
+    RedisServerStart
+    if Error=$(BotRun ${StartSoftware} start ${BotName} "afyz ${BotName} start")
+    then
+      MsgboxSize
+      if whiptail --title "AF-YZ"  \
+      --yes-button "打开日志" \
+      --no-button "返回菜单" \
+      --yesno "${BotName} [已启动]" \
+      ${HEIGHT} ${WIDTH} \
+      3>&1 1>&2 2>&3
+      then
+        if ! Error=$(BotRun ${StartSoftware} log ${BotName})
+        then
+          MsgboxSize
+          whiptail --title "AF-YZ" \
+          --msgbox "${BotName} 日志 [打开失败] \n原因: ${Error}" \
+          ${HEIGHT} ${WIDTH}
+        fi
+      else
+        BotManage
+      fi
+    else
+      MsgboxSize
+      whiptail --title "AF-YZ" \
+      --msgbox "${BotName} [未启动] \n原因: ${Error}" \
+      ${HEIGHT} ${WIDTH}
+    fi
+  else
+    BotManage
+  fi
+;;
+2)
+  if CheckStart ${BotName}
+  then
+    afyz ${BotName} start
+    BotManage
+  else
+    BotManage
+  fi
+;;
+3)
+  if CheckStart ${BotName}
+  then
+    MsgboxSize
+    whiptail --title "AF-YZ" \
+    --msgbox "${BotName} [未启动] 无需停止" \
+    ${HEIGHT} ${WIDTH}
+    BotManage
+  else
+    if Error=$(BotRun ${StartSoftware} stop ${BotName})
+    then
+      MsgboxSize
+      whiptail --title "AF-YZ" \
+      --msgbox "${BotName} 停止 [成功]" \
+      ${HEIGHT} ${WIDTH}
+      BotManage
+    else
+      MsgboxSize
+      whiptail --title "AF-YZ" \
+      --msgbox "${BotName} 停止 [失败] \n原因: ${Error}" \
+      ${HEIGHT} ${WIDTH}
+      BotManage
+    fi
+  fi
+;;
+4)
+  if CheckStart ${BotName}
+  then
+    MsgboxSize
+    whiptail --title "AF-YZ" \
+    --msgbox "${BotName} [未启动] 无需重启" \
+    ${HEIGHT} ${WIDTH}
+    BotManage
+  else
+    if Error=$(BotRun ${StartSoftware} restart ${BotName})
+    then
+      MsgboxSize
+      whiptail --title "AF-YZ" \
+      --msgbox "${BotName} 重启 [成功]" \
+      ${HEIGHT} ${WIDTH}
+      BotManage
+    else
+      MsgboxSize
+      whiptail --title "AF-YZ" \
+      --msgbox "${BotName} 重启 [失败] \n原因: ${Error}" \
+      ${HEIGHT} ${WIDTH}
+      BotManage
+    fi
+  fi
+;;
+5)
+  if CheckStart ${BotName}
+  then
+    MsgboxSize
+    whiptail --title "AF-YZ" \
+    --msgbox "${BotName} [未启动] 无法打开日志" \
+    ${HEIGHT} ${WIDTH}
+    BotManage
+  else
+    if Error=$(BotRun ${StartSoftware} log ${BotName})
+    then
+      MsgboxSize
+      whiptail --title "AF-YZ" \
+      --msgbox "打开 ${BotName} 日志 [成功]" \
+      ${HEIGHT} ${WIDTH}
+      BotManage
+    else
+      MsgboxSize
+      whiptail --title "AF-YZ" \
+      --msgbox "打开 ${BotName} 日志 [失败] \n原因: ${Error}" \
+      ${HEIGHT} ${WIDTH}
+      BotManage
+    fi
+  fi
+;;
+6)
+  curl -sL ${GithubMirror}https://raw.githubusercontent.com/ArcticFox520/Yunzai-Bot-Script/main/Manage/Plugin | bash
+  BotManage
+;;
+7)
+  git_pull(){
+  echo -e ${yellow}正在更新 ${folder}${background}
+  if ! git pull -f
+  then
+    echo -en ${red}${folder}更新失败 ${yellow}是否强制更新 [Y/N]${background};read YN
+    case ${YN} in
+    Y|y)
+      remote=$(grep 'remote =' .git/config | sed 's/remote =//g')
+      remote=$(echo ${remote})
+      branch=$(grep branch .git/config | sed "s/\[branch \"//g" | sed 's/"//g' | sed "s/\]//g")
+      branch=$(echo ${branch})
+      git fetch --all
+      git reset --hard ${remote}/${branch}
+      git_pull
+    esac
+  fi
+  }
+  folder=${BotName}
+  git_pull
+  for folder in $(ls plugins)
+  do
+    if [ -d plugins/${folder}/.git ];then
+      cd plugins/${folder}
+      git_pull ${folder}
+      cd ../../
+    fi
+  done
+  echo -e ${yellow}正在更新NPM${background}
+  npm install -g npm@latest
+  echo -e ${yellow}正在更新PNPM${background}
+  pnpm install -g pnpm@latest
+  echo -en ${cyan}更新完成 回车返回${background};read
+  BotManage
+;;
+8)
+  OtherFunctions
+  BotManage
+;;
+esac
+}
+
+Install(){
+command_all=""
+for Command in ${command_all[@]}
+until bash Insatll $1
+do
+  
+done
+}
+
+MenuSize
+Number=$(whiptail \
+--title "AF-YZ" \
+--menu "请选择bot" \
+${HEIGHT} ${WIDTH} ${OPTION} \
+"1" "Miao-Yunzai" \
+"2" "TRSS-Yunzai" \
+"0" "退出" \
+3>&1 1>&2 2>&3)
+case ${Number} in
+1)
+  if CheckPath Miao-Yunzai
+  then
+    BotManage Miao-Yunzai
+  else
+    Install Miao-Yunzai
+  fi
+  ;;
+2)
+  if CheckPath TRSS-Yunzai
+  then
+    BotManage TRSS-Yunzai
+  else
+    Install TRSS-Yunzai
+  fi
+  ;;
+0)
+  exit
+  ;;
+esac

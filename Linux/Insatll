@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# Function to determine Linux distribution
+get_linux_distribution() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        if [ -n "$ID" ]; then
+            echo "$ID"
+        elif [ -n "$DISTRIB_ID" ]; then
+            echo "$DISTRIB_ID"
+        else
+            echo "Unknown"
+        fi
+    else
+        echo "Unknown"
+    fi
+}
+
+# Main script
+linux_distribution=$(get_linux_distribution)
+
+case "$linux_distribution" in
+    "ubuntu")
+        echo "Ubuntu"
+        ;;
+    "debian")
+        echo "Debian"
+        ;;
+    "centos" | "centos-stream")
+        echo "CentOS Stream"
+        ;;
+    "arch")
+        echo "Arch Linux"
+        ;;
+    "manjaro")
+        echo "Manjaro Linux"
+        ;;
+    "opensuse")
+        echo "OpenSUSE"
+        ;;
+    "fedora")
+        echo "Fedora"
+        ;;
+    "kali")
+        echo "Kali Linux"
+        ;;
+    "alpine")
+        echo "Alpine Linux"
+        ;;
+    *)
+        echo "Unknown distribution: $linux_distribution"
+        ;;
+esac

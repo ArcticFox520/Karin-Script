@@ -1,0 +1,491 @@
+#!/bin/env bash
+black="\e[30m"
+red="\033[31m"
+green="\033[32m"
+yellow="\033[33m"
+blue="\033[34m"
+purple="\033[35m"
+cyan="\033[36m"
+white="\033[37m"
+background="\033[0m"
+
+GithubMirror="https://gh.arcticfox.top"
+
+function MenuSize(){
+HEIGHT=$(($(tput lines) - 10))
+WIDTH=$(($(tput cols) - 10))
+OPTION=$((${HEIGHT} - 8))
+if (( $HEIGHT <= 8 ));then
+  echo -e ${blue}[${red}*${blue}] ${cyan}您的屏幕高度过低.${background}
+  exit
+fi
+if (( $WIDTH <= 0 ));then
+  echo -e ${blue}[${red}*${blue}] ${cyan}您的屏幕宽度度过窄.${background}
+  exit
+fi
+}
+
+function MsgboxSize(){
+HEIGHT=$(($(tput lines) - 30))
+WIDTH=$(($(tput cols) - 10))
+if (( $HEIGHT <= 0 ));then
+  echo -e ${blue}[${red}*${blue}] ${cyan}您的屏幕高度过低.${background}
+  exit
+fi
+if (( $WIDTH <= 0 ));then
+  echo -e ${blue}[${red}*${blue}] ${cyan}您的屏幕宽度度过窄.${background}
+  exit
+fi
+}
+feedback(){
+if [ $? == 1 ]
+then
+  Main
+  exit
+fi
+}
+
+InstallGitPlugin(){
+MsgboxSize
+if (${TUISoftware} --title "AF-BOT"  \
+--yes-button "GhMirror" \
+--no-button "Github" \
+--yesno "请选择plugin.yaml来源\n中国大陆建议使用GhMirror" \
+${HEIGHT} ${WIDTH} \
+3>&1 1>&2 2>&3)
+then
+  echo -e ${cyan}正在缓存 ${yellow}plugin.yaml${background}
+  PluginURl="${GithubMirror}/https://raw.githubusercontent.com/ArcticFox520/Yunzai-Bot-Script/main/Manage/plugin.yaml"
+  GitSite=gitee
+  curl -sL ${PluginURl} > plugin.yaml
+else
+  echo -e ${cyan}正在缓存 ${yellow}plugin.yaml${background}
+  PluginURl="https://raw.githubusercontent.com/ArcticFox520/Yunzai-Bot-Script/main/Manage/plugin.yaml"
+  curl -sL ${PluginURl} > plugin.yaml
+  GitSite=github
+fi
+
+MsgboxSize
+if (${TUISoftware} \
+--title "AF-BOT" \
+--yes-button "单选" \
+--no-button "多选" \
+--yesno "请选择Git插件安装方式" \
+${HEIGHT} ${WIDTH})
+then
+  MultipleChoice=false
+  ChecklistMenu=menu
+  OFF=
+  tips=
+else
+  MultipleChoice=true
+  ChecklistMenu=checklist
+  OFF=OFF
+  tips="[空格选择 回车确定 空选取消]"
+fi
+
+GitPlugin=$(yq .GitPlugin plugin.yaml)
+
+for i in $(ls plugins -I example -I genshin -I other -I system)
+do
+  if [ -e ./plugins/${i}/package.json ]
+  then
+    PackageName=$(yq .name ./plugins/${i}/package.json)
+  fi
+  PackageNameLocal="${PackageNameLocal} ${PackageName}"
+done
+
+for i in $(ls plugins -I example -I genshin -I other -I system)
+do
+  if [ -e ./plugins/${i}/.git/config ]
+  then
+    Git=$(grep url ./plugins/${i}/.git/config | sed 's|url =||g')
+  fi
+  GitLocal="${GitLocal} ${Git}"
+done
+
+for PluginFolderCloud in ${GitPlugin}
+do
+  PackageName=$(yq .${PluginFolderCloud}.PackageName plugin.yaml)
+  PackageName=$(echo ${PackageName})
+  Git=$(yq .${PluginFolderCloud}.Repository plugin.yaml)
+  Git=$(echo ${Git} | sed 's|- Github: ||g' | sed 's|- Gitee: ||g')
+  if echo ${PackageNameLocal} | grep -q "${PackageName}"
+  then
+    InstallationStatus="[已安装]"
+    InstalledPlugin="${InstalledPlugin} ${PluginFolderCloud}"
+  elif echo ${GitLocal} | grep -q "${Git}"
+  then
+    InstallationStatus="[已安装]"
+    InstalledPlugin="${InstalledPlugin} ${PluginFolderCloud}"
+  elif [ -d ./plugins/${PluginFolderCloud} ]
+  then
+    InstallationStatus="[已安装]"
+    InstalledPlugin="${InstalledPlugin} ${PluginFolderCloud}"
+  else
+    InstallationStatus="[未安装]"
+  fi
+  Options="${Options} ${PluginFolderCloud} ${InstallationStatus} ${OFF}"
+done
+MenuSize
+PluginName=$(${TUISoftware} \
+--title "AF-YZ" \
+--${ChecklistMenu} "插件管理 ${tips}" \
+${HEIGHT} ${WIDTH} ${OPTION} ${Options} \
+3>&1 1>&2 2>&3)
+
+if [ -z "${PluginName}" ]
+then
+  return
+fi
+
+if [ "$(yq .${Plugin}.Repository[0] plugin.yaml)" != "No" ] && [ "$(yq .${Plugin}.Repository[1] plugin.yaml)" != "No" ]
+then
+  if [ "${GitSite}" == "Gitee" ]
+  then
+    GroupNumber=0
+    Git="Gitee:"
+    PNPMMirror="https://registry.npmmirror.com"
+  elif [ "${GitSite}" == "Github" ]
+  then
+    GroupNumber=1
+    Git="Github:"
+    PNPMMirror="https://registry.npmjs.org"
+  fi
+else
+  if [ "$(yq .${Plugin}.Repository[0] plugin.yaml)" != "No" ]
+  then
+    GroupNumber=0
+    Git="Gitee:"
+    PNPMMirror="https://registry.npmmirror.com"
+  elif [ "$(yq .${Plugin}.Repository[1] plugin.yaml)" != "No" ]
+  then
+    GroupNumber=1
+    Git="Github:"
+    PNPMMirror="https://registry.npmjs.org"
+    if [ "${Git}" == "Gitee" ]
+    then
+      GhMirror="${GithubMirror}/"
+    elif [ "${Git}" == "Github" ]
+    then
+      unset GhMirror 
+    fi 
+  fi
+fi
+if [ ${MultipleChoice} == true ]
+then
+  for Plugin in ${PluginName}
+  do
+    GitURL=$(yq .${Plugin}.Repository[${GroupNumber}] plugin.yaml | sed "s|${Git}||g")
+    Author=$(yq .${Plugin}.Author plugin.yaml)
+    if ! echo ${InstalledPlugin} | grep -q ${Plugin}
+    then
+      echo -e ${white}==================================${background}
+      echo -e ${cyan}正在安装: ${yellow}${Plugin} ${cyan}稍安勿躁~${background}
+      echo -e ${cyan}作者: ${yellow}${Author}${background}
+      echo -e ${white}==================================${background}
+      echo -e ${cyan}正在克隆插件${background}
+      if git clone --depth=1 ${GhMirror}${GitURL} ./plugins/${Plugin}
+      then
+        if [ -e ./plugins/${Plugin}/package.json ]
+        then
+          echo -e ${cyan}正在安装依赖${background}
+          if pnpm install --registry=${PNPMMirror}
+          then
+            echo -e ${cyan}依赖安装 ${green}成功 ${background}
+          else
+            echo -e ${cyan}依赖安装 ${red}失败 ${yellow}跳过${background}
+          fi
+        fi
+      else
+        echo -e ${cyan}插件克隆 ${red}失败 ${yellow}跳过${background}
+      fi
+    else
+      echo -e ${cyan}${Plugin}插件已安装 ${yellow}跳过${background}
+    fi
+  done
+  echo -en ${cyan}所有插件 ${green}安装完成 ${cyan}回车返回${background};read
+elif [ ${MultipleChoice} == false ]
+then
+  GitURL=$(yq .${PluginName}.Repository[${GroupNumber}] plugin.yaml | sed "s|${Git}||g")
+  Author=$(yq .${PluginName}.Author plugin.yaml)
+  if ! echo ${InstalledPlugin} | grep -q ${Plugin}
+  then
+    echo -e ${white}==================================${background}
+    echo -e ${cyan}正在安装: ${yellow}${PluginName} ${cyan}稍安勿躁~${background}
+    echo -e ${cyan}作者: ${yellow}${Author}${background}
+    echo -e ${white}==================================${background}
+    echo -e ${cyan}正在克隆插件${background}
+    if git clone --depth=1 ${GhMirror}${GitURL} ./plugins/${Plugin}
+    then
+      if [ -e ./plugins/${Plugin}/package.json ]
+      then
+        echo -e ${cyan}正在安装依赖${background}
+        if pnpm install --registry=${PNPMMirror}
+        then
+          echo -e ${cyan}依赖安装 ${green}成功 ${background}
+          echo -en ${cyan}回车返回${background};read
+        else
+          echo -e ${cyan}依赖安装 ${red}失败${background}
+          echo -en ${cyan}回车返回${background};read
+        fi
+      fi
+    else
+      echo -e ${cyan}插件克隆 ${red}失败${background}
+      echo -en ${cyan}回车返回${background};read
+    fi
+  else
+    MsgboxSize
+    ${TUISoftware} --title "AF-YZ" \
+    --msgbox "${Plugin} 已安装" \
+    ${HEIGHT} ${WIDTH}
+  fi
+fi
+}
+
+InstallJSPlugin(){
+MenuSize
+Number=$(${TUISoftware} \
+--title "AF-YZ" \
+--menu "JS插件安装" \
+${HEIGHT} ${WIDTH} ${OPTION} \
+"1" "源码直连" \
+"2" "Git网页链接" \
+"3" "Git仓库" \
+"4" "Download文件夹" \
+"5" "QQ文件夹"
+"6" "JS文件写入"
+"0" "返回/退出" \
+3>&1 1>&2 2>&3)
+case ${Number} in
+1)
+  echo -en ${green}请输入链接: ${background};read JSURL
+  JSFile=`echo $js | awk -F/ '{print $NF}'`
+  if [[ ${js} != https://* ]] || [[ ${js} != *.js ]];then
+    echo -e ${red}输入错误${background}
+    echo -en ${cyan}回车返回${background};read
+  fi
+  curl -sL ${JSURL} > plugins/example/${JSFile}
+;;
+2)
+  echo -en ${green}请输入链接: ${background};read JSURL
+  JSFile=`echo $js | awk -F/ '{print $NF}'`
+  if [[ ${JSURL} = *git* ]] && [[ ${JSURL} = *.js]]
+  then
+    if  [[ ${JSURL} = *github* ]]
+    then
+      JSURL=$(echo ${JSURL} | sed "s|blob/||g" | sed "s|github|raw.githubusercontent|g")
+      curl -sL ${GitHubMirror}/${JSURL} > plugins/example/${JSFile}
+    elif  [[ ${JSURL} = *gitee* ]]
+    then
+        JSURL=$(echo ${JSURL} | sed 's|blob|raw|g')
+        curl -sL ${JSURL} > plugins/example/${JSFile}
+    fi
+  else
+    echo -e ${red}错误 链接不来至于Git仓库${background}
+    echo -en ${cyan}回车返回${background};read
+  fi
+;;
+3)
+  
+;;
+4)
+  
+;;
+5)
+  
+;;
+6)
+  
+;;
+0)
+  
+;;
+esac
+}
+function Main(){
+MenuSize
+Number=$(${TUISoftware} \
+--title "AF-YZ" \
+--menu "插件管理" \
+${HEIGHT} ${WIDTH} ${OPTION} \
+"1" "安装GIT插件" \
+"2" "安装JS插件" \
+"3" "更新GIT插件" \
+"4" "删除GIT插件" \
+"5" "删除JS插件" \
+"0" "返回/退出" \
+3>&1 1>&2 2>&3)
+case ${Number} in
+1)
+  InstallGitPlugin
+  ;;
+2)
+  InstallJSPlugin
+  ;;
+3)
+  UpdateGitPlugin
+  ;;
+4)
+  DeleteGitPlugin
+  ;;
+5)
+  DeleteJSPlugin
+  ;;
+0)
+  exit
+  ;;
+esac
+}
+
+CheckPath(){
+if [ -d "./plugins" ];then
+  PluginPath="."
+  cd ${PluginPath}
+elif [ -d "../plugins" ];then
+  PluginPath=".."
+  cd ${PluginPath}
+else
+  MenuSize
+  Number=$(${TUISoftware} \
+  --title "白狐 QQ群:705226976" \
+  --menu "请选择您要为哪一个bot管理插件" \
+  ${HEIGHT} ${WIDTH} ${OPTION} \
+  "1" "Miao-Yunzai" \
+  "2" "TRSS-Yunzai" \
+  "3" "切换CLI菜单" \
+  "0" "退出" \
+  3>&1 1>&2 2>&3)
+  case ${Number} in 
+  1)
+    BotName="Miao-Yunzai"
+  ;;
+  2)
+    BotName="TRSS-Yunzai"
+  ;;
+  esac
+  if [ -d "/root/${BotName}/node_modules" ];then
+    PluginPath="/root/${BotName}"
+    cd ${PluginPath}
+  elif [ -d "/root/.fox@bot/${BotName}/node_modules" ];then
+    PluginPath="/root/.fox@bot/${BotName}"
+    cd ${PluginPath}
+  elif [ -d "/home/lighthouse/ubuntu/${BotName}/node_modules" ];then
+    PluginPath="/home/lighthouse/ubuntu/${BotName}"
+    cd ${PluginPath}
+  elif [ -d "/home/lighthouse/centos/${BotName}/node_modules" ];then
+    PluginPath="/home/lighthouse/centos/${BotName}"
+    cd ${PluginPath}
+  elif [ -d "/home/lighthouse/debian/${BotName}/node_modules" ];then
+    PluginPath="/home/lighthouse/debian/${BotName}"
+    cd ${PluginPath}
+  elif [ -d "/root/TRSS_AllBot/${BotName}/node_modules" ];then
+    PluginPath="/root/TRSS_AllBot/${BotName}"
+    cd ${PluginPath}
+  else
+    MsgboxSize
+    ${TUISoftware} --title "AF-BOT" \
+    --msgbox "自动判断路径失败 \n请进入${BotName}目录后 使用本脚本" ${HEIGHT} ${WIDTH}
+    exit
+  fi
+fi
+}
+LinuxInstallPkg(){
+if [ $(command -v apt) ];then
+    pkg_install="apt install -y"
+elif [ $(command -v pacman) ];then
+    pkg_install="pacman -Syy --noconfirm --needed"
+fi
+function pkg_install(){
+i=0
+echo -e ${yellow}未安装${pkg} 开始安装${background}
+if [ ! -z "$1" ];then
+    pkg="$1"
+fi
+until ${pkg_install} ${pkg}
+do
+    if [ "${i}" == "3" ]
+        then
+            echo -e ${red}错误次数过多 退出${background}
+            exit
+    fi
+    i=$((${i}+1))
+    echo -en ${red}命令执行失败 ${green}3秒后重试${background}
+    sleep 3s
+    echo
+done
+}
+pkg_list=("curl" "git")
+for package in ${pkg_list[@]}
+do
+  if [ -x "$(command -v pacman)" ];then
+    if ! pacman -Qs "${package}" > /dev/null 2>&1;then
+      pkg="${package} ${pkg}"
+    fi
+  elif [ -x "$(command -v apt)" ];then
+    if ! dpkg -s "${package}" > /dev/null 2>&1;then
+      pkg="${package} ${pkg}"
+    fi
+  fi
+done
+if [ ! -z "${pkg}" ]; then
+  if [ -x "$(command -v pacman)" ];then
+    if ! pacman -Qs "${package}" > /dev/null 2>&1;then
+        pkg_install
+    fi
+  elif [ -x "$(command -v apt)" ];then
+    if ! dpkg -s "${package}" > /dev/null 2>&1;then
+        apt update
+        pkg_install
+    fi
+  fi
+fi
+}
+NotLinux(){
+  if [ ! -x "$(command -v curl)" ];then
+    echo -e ${cyan}检测到未安装${red}curl${background}
+    exit
+  fi
+  if [ ! -x "$(command -v git)" ];then
+    echo -e ${cyan}检测到未安装${red}git${background}
+    exit
+  fi
+  
+}
+PnpmInstall(){
+if [ ! -x "$(command -v pnpm)" ];then
+  echo -e ${cyan}检测到未安装pnpm 开始安装${background}
+  if [ ! -x "$(command -v npm)" ];then
+    echo -e ${red}未安装npm${background}
+    exit
+  fi
+  npm install -g pnpm --registry=https://registry.npmmirror.com
+fi
+}
+SelectPage(){
+if [ -x "$(command -v whiptail)" ];then
+  TUISoftware=whiptail
+  ChoosePage=TUI_Page
+elif [ -x "$(command -v dialog)" ];then
+  TUISoftware=dialog
+  ChoosePage=TUI_Page
+fi
+}
+if [ -e "/etc/issue" ];then
+    LinuxInstallPkg
+    PnpmInstall
+    SelectPage
+    CheckPath
+    Main
+elif [ -e "/etc/os-release" ];then
+    LinuxInstallPkg
+    PnpmInstall
+    SelectPage
+    CheckPath
+    Main
+else
+    NotLinux
+    SelectPage
+    CheckPath
+    Main
+fi
